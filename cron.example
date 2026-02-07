@@ -1,0 +1,24 @@
+# stockMaxWin 定时执行说明
+# 目标：每半小时 9:15~15:00 周一至周五，启动后一直按该周期执行。
+
+# ========== 推荐：内置调度（常驻进程，不依赖 cron） ==========
+# 启动一次即可，进程内部按 9:15/9:45/.../15:00 每半小时执行，保证周期稳定。
+#
+# 前台运行（调试）：
+#   cd /opt/stockMaxWin && ./run.sh --schedule
+#
+# 后台常驻（nohup）：
+#   cd /opt/stockMaxWin && nohup ./run.sh --schedule >> /var/log/stockMaxWin.log 2>&1 &
+#
+# systemd（开机自启、崩溃重启，推荐 NAS/服务器）：
+#   1. 复制 stockMaxWin.service.example 为 stockMaxWin.service，改 WorkingDirectory/ExecStart 路径
+#   2. sudo cp stockMaxWin.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload && sudo systemctl enable --now stockMaxWin
+
+# ========== 备选：Cron 触发（依赖 cron 服务） ==========
+# 需保证 cron 已启用且开机自启；执行时刻 9:15 9:45 ... 15:00 周一至周五
+# crontab -e 后粘贴下面三行（路径按实际修改）：
+#
+# 15 9-14 * * 1-5 cd /opt/stockMaxWin && ./run.sh >> /var/log/stockMaxWin.log 2>&1
+# 45 9-14 * * 1-5 cd /opt/stockMaxWin && ./run.sh >> /var/log/stockMaxWin.log 2>&1
+# 0 15 * * 1-5 cd /opt/stockMaxWin && ./run.sh >> /var/log/stockMaxWin.log 2>&1

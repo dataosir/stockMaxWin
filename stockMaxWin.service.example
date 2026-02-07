@@ -1,0 +1,15 @@
+[Unit]
+Description=stockMaxWin 选股调度（9:15~15:00 每半小时 周一至周五）
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/stockMaxWin
+ExecStart=/opt/stockMaxWin/run.sh --schedule
+Restart=always
+RestartSec=60
+StandardOutput=append:/var/log/stockMaxWin.log
+StandardError=append:/var/log/stockMaxWin.log
+
+[Install]
+WantedBy=multi-user.target
