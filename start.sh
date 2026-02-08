@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
-# NAS 上用：只运行已编译好的二进制，不依赖 Go。用法: ./start.sh [--schedule]
-# 调度模式：STOCKMAXWIN_SCHEDULE=1 常驻，9:15~15:00 每半小时执行。
+# NAS 上用：只运行已编译好的二进制，不依赖 Go。
+# 默认定时模式（9:15~15:00 每半小时 周一至周五）；传 --once 则只跑一次退出。
+# 用法: ./start.sh  或  ./start.sh --once
 set -eu
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -16,11 +17,13 @@ if [ ! -x "$OUT" ]; then
 	chmod +x "$OUT"
 fi
 
+# 脚本启动默认定时；仅传 --once 时跑一次
 case "${1:-}" in
-  --schedule) export STOCKMAXWIN_SCHEDULE=1 ;;
+  --once) export STOCKMAXWIN_SCHEDULE=0; shift ;;
+  *)      export STOCKMAXWIN_SCHEDULE=1 ;;
 esac
-if [ -n "${STOCKMAXWIN_SCHEDULE:-}" ]; then
-  echo "[start] 调度模式：9:15~15:00 每半小时 周一至周五"
+if [ "$STOCKMAXWIN_SCHEDULE" = "1" ]; then
+  echo "[start] 定时模式：9:15~15:00 每半小时 周一至周五"
 fi
 echo "[start] 运行 $BINARY"
 exec "$OUT" "$@"

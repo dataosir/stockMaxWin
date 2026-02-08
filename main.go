@@ -76,7 +76,23 @@ var apiClient = api.NewClient()
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	// 启动成功时向收件人发一封打招呼邮件：今日大盘 + 随机加油语
+	mailCfg := buildMailConfig(config.LoadSMTP())
+	if mailCfg.Enabled() {
+		greetCtx := trace.WithTraceID(context.Background(), trace.NewTraceID())
+		indices, err := apiClient.GetIndexQuotes(greetCtx)
+		if err != nil {
+			trace.Log(greetCtx, "main: 获取大盘数据失败(仍发问候) err=%v", err)
+			indices = nil
+		}
+		if err := mail.SendStartupGreeting(greetCtx, mailCfg, indices); err != nil {
+			trace.Log(greetCtx, "main: 发送启动问候邮件失败 err=%v", err)
+		} else {
+			trace.Log(greetCtx, "main: 已发启动问候邮件")
+		}
+	}
 	if scheduleEnabled() {
+		log.Printf("[调度] 已开启定时模式：9:15 / 9:45 / … / 15:00 每半小时执行（周一至周五），进程将常驻")
 		runScheduler()
 		return
 	}
@@ -97,6 +113,7 @@ func runScheduler() {
 		now := time.Now()
 		if next.After(now) {
 			d := next.Sub(now)
+			log.Printf("[调度] 下次执行时间：%s（约 %s 后）", next.Format(timeFormatNextRun), d.Round(time.Second))
 			trace.Log(ctx, "main: 下次执行 %s (约 %s 后)", next.Format(timeFormatNextRun), d.Round(time.Second))
 			time.Sleep(d)
 		}

@@ -30,6 +30,20 @@ var stockMaxims = []string{
 	"会空仓的是师爷，会等待的是高手。",
 }
 
+// 启动问候「加油的话」（每次随机一句）
+var greetingCheers = []string{
+	"新的一天，稳住心态，按纪律来。",
+	"行情在变，策略不变，加油。",
+	"少动多看，等信号再出手。",
+	"今天也要理性交易，不追高不杀跌。",
+	"做好功课，机会来了才接得住。",
+	"控制仓位，保住本金，来日方长。",
+	"早盘先看大盘，再选个股，稳。",
+	"宁可少赚，不可大亏，共勉。",
+	"坚持纪律，时间会站在你这边。",
+	"早，今天也要认真复盘、冷静下单。",
+}
+
 // 超时与端口
 const (
 	smtpTimeout      = 15 * time.Second
@@ -39,12 +53,14 @@ const (
 
 // 邮件主题与内容
 const (
-	subjectReport      = "今日选股结果"
-	subjectNoSelection = "选股提醒：本期无入选，请好好工作"
-	titleReport        = "选股结果"
-	titleNoSelection   = "选股提醒"
-	htmlCharset        = "UTF-8"
-	emptyMainBusiness  = "-"
+	subjectReport       = "今日选股结果"
+	subjectNoSelection  = "选股提醒：本期无入选，请好好工作"
+	subjectStartup      = "选股助手已启动 · 今日大盘"
+	titleReport         = "选股结果"
+	titleNoSelection    = "选股提醒"
+	titleStartup        = "选股助手已启动"
+	htmlCharset         = "UTF-8"
+	emptyMainBusiness   = "-"
 )
 
 type SMTPConfig struct {
@@ -218,4 +234,51 @@ func SendNoSelectionReminder(ctx context.Context, cfg *SMTPConfig) error {
 		toList[i] = strings.TrimSpace(toList[i])
 	}
 	return send(cfg, subject, body, toList)
+}
+
+// SendStartupGreeting 启动成功时发送打招呼邮件：今日大盘数据 + 随机一句加油的话。
+func SendStartupGreeting(ctx context.Context, cfg *SMTPConfig, indices []model.IndexQuote) error {
+	if cfg == nil || !cfg.Enabled() {
+		return nil
+	}
+	cheer := greetingCheers[rand.Intn(len(greetingCheers))]
+	trace.Log(ctx, "mail: 发送启动问候 to=%s 加油=%s", cfg.To, cheer)
+	body := buildStartupGreetingHTML(indices, cheer)
+	toList := strings.Split(cfg.To, ",")
+	for i := range toList {
+		toList[i] = strings.TrimSpace(toList[i])
+	}
+	return send(cfg, subjectStartup, body, toList)
+}
+
+func buildStartupGreetingHTML(indices []model.IndexQuote, cheer string) string {
+	var b strings.Builder
+	// 现代邮件风格：窄幅、留白、无衬线字体、涨跌颜色
+	b.WriteString(`<!DOCTYPE html><html><head><meta charset="` + htmlCharset + `"><meta name="viewport" content="width=device-width,initial-scale=1">`)
+	b.WriteString(`<title>` + titleStartup + `</title></head><body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,sans-serif;">`)
+	b.WriteString(`<div style="max-width:520px;margin:24px auto;padding:28px 24px;background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.06);">`)
+	b.WriteString(`<h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#1a1a1a;">选股助手已启动</h1>`)
+	b.WriteString(`<p style="margin:0 0 20px;font-size:14px;color:#666;">下面是今日大盘，之后会按 9:15～15:00 每半小时跑一次选股（工作日）。</p>`)
+	b.WriteString(`<table style="width:100%;border-collapse:collapse;font-size:14px;">`)
+	b.WriteString(`<thead><tr style="border-bottom:2px solid #eee;"><th style="text-align:left;padding:12px 10px;color:#666;font-weight:500;">指数</th><th style="text-align:right;padding:12px 10px;color:#666;font-weight:500;">现价</th><th style="text-align:right;padding:12px 10px;color:#666;font-weight:500;">涨跌幅</th></tr></thead><tbody>`)
+	for i, q := range indices {
+		bg := "#fff"
+		if i%2 == 1 {
+			bg = "#fafafa"
+		}
+		pctStyle := "color:#333;"
+		if q.ChangePct > 0 {
+			pctStyle = "color:#c62828;"
+		} else if q.ChangePct < 0 {
+			pctStyle = "color:#2e7d32;"
+		}
+		pctStr := fmt.Sprintf("%.2f%%", q.ChangePct)
+		b.WriteString(fmt.Sprintf(`<tr style="background:%s"><td style="padding:12px 10px;color:#1a1a1a;">%s</td><td style="text-align:right;padding:12px 10px;color:#1a1a1a;">%.2f</td><td style="text-align:right;padding:12px 10px;%s">%s</td></tr>`,
+			bg, escapeHTML(q.Name), q.Price, pctStyle, pctStr))
+	}
+	b.WriteString("</tbody></table>")
+	b.WriteString(`<p style="margin:22px 0 0;padding:14px 16px;background:#f8f9fa;border-radius:8px;font-size:14px;color:#374151;line-height:1.5;">` + escapeHTML(cheer) + `</p>`)
+	b.WriteString(`<p style="margin:20px 0 0;font-size:12px;color:#9ca3af;">本邮件由选股助手自动发送，请勿直接回复。</p>`)
+	b.WriteString(`</div></body></html>`)
+	return b.String()
 }

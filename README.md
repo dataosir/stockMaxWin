@@ -30,6 +30,20 @@ chmod +x build-linux.sh && ./build-linux.sh
 
 编译已加 `-ldflags "-s -w"` 以减小体积。Cron 定时任务示例见 `cron.example`（每周一至周五 14:00 运行）。
 
+**飞牛 NAS 部署**：在 NAS 上只跑二进制、不装 Go 时，请用 `start.sh`（仅运行已编译好的 `stockMaxWin`），并参考 **[docs/DEPLOY-FEINIU-NAS.md](docs/DEPLOY-FEINIU-NAS.md)** 完成上传、配置与开机自启。
+
+**定时执行（常驻、每半小时 9:15～15:00 周一至周五）**：
+
+```bash
+# 方式一：start.sh（推荐 NAS）— 默认定时，无需参数
+./start.sh
+
+# 方式二：直接跑二进制时需显式开调度，否则只跑一次退出
+STOCKMAXWIN_SCHEDULE=1 ./stockMaxWin
+```
+
+用 `./start.sh --once` 可只跑一次即退出。启动后控制台会打印「下次执行时间：YYYY-MM-DD HH:MM」。
+
 可选：通过环境变量调整并发数（默认 10，防止封 IP/内存溢出）：
 
 ```bash

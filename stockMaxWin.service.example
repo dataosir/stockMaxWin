@@ -5,7 +5,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/stockMaxWin
-ExecStart=/opt/stockMaxWin/run.sh --schedule
+ExecStart=/opt/stockMaxWin/start.sh
 Restart=always
 RestartSec=60
 StandardOutput=append:/var/log/stockMaxWin.log

@@ -56,3 +56,11 @@ type KLine struct {
 	Open   float64
 	Volume int64
 }
+
+// IndexQuote 大盘指数一条：名称、代码、现价、涨跌幅（用于启动问候邮件）。
+type IndexQuote struct {
+	Code      string
+	Name      string
+	Price     float64
+	ChangePct float64
+}

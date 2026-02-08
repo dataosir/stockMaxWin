@@ -29,12 +29,18 @@ const (
 
 // 东方财富接口地址
 const (
-	EastMoneyListURL  = "https://82.push2.eastmoney.com/api/qt/clist/get"
-	EastMoneyKLineURL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+	EastMoneyListURL   = "https://82.push2.eastmoney.com/api/qt/clist/get"
+	EastMoneyKLineURL  = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+	EastMoneyIndexURL  = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+	indexSecIDs        = "1.000001,0.399001,0.399006" // 上证指数、深证成指、创业板指
+	indexFields        = "f12,f14,f2,f3"              // 代码、名称、现价、涨跌幅
 )
 
-// 列表接口请求字段：f2 现价 f3 涨跌幅 f6 成交量 f8 换手 f10 量比 f12 代码 f14 名称 f23 成交额 f20 总市值 f9 市盈率
+// 列表接口请求字段：f2 现价 f3 涨跌幅(%) f6 成交量 f8 换手 f10 量比 f12 代码 f14 名称 f23 成交额 f20 总市值 f9 市盈率
 const listFieldsMainBoard = "f2,f3,f6,f8,f10,f12,f14,f23,f20,f9"
+
+// 指数接口 ulist 的 f3 为“百分比×100”，如 -0.25% 返回 -25，需除以 100 后使用
+const indexChangePctDivisor = 100
 
 // 全市场列表字段：f12 代码 f14 名称
 const listFieldsBrief = "f12,f14"
@@ -583,6 +589,51 @@ func parseKlinesGJSON(body []byte, code string) ([]model.KLine, error) {
 
 func (c *Client) GetKLines(ctx context.Context, code string) ([]model.KLine, error) {
 	return c.GetHisKlines(ctx, code, 30)
+}
+
+// GetIndexQuotes 获取今日大盘指数：上证、深证成指、创业板指（用于启动问候邮件）。
+func (c *Client) GetIndexQuotes(ctx context.Context) ([]model.IndexQuote, error) {
+	url := fmt.Sprintf("%s?secids=%s&fields=%s", EastMoneyIndexURL, indexSecIDs, indexFields)
+	resp, err := c.doWithRetry(ctx, http.MethodGet, url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read index body: %w", err)
+	}
+	return parseIndexQuotesGJSON(body)
+}
+
+func parseIndexQuotesGJSON(body []byte) ([]model.IndexQuote, error) {
+	diff := gjson.GetBytes(body, "data.diff")
+	if !diff.Exists() || !diff.IsArray() {
+		return nil, fmt.Errorf("api: no data.diff for index")
+	}
+	arr := diff.Array()
+	out := make([]model.IndexQuote, 0, len(arr))
+	for _, v := range arr {
+		code := strings.TrimSpace(v.Get("f12").String())
+		name := strings.TrimSpace(v.Get("f14").String())
+		if code == "" && name == "" {
+			continue
+		}
+		price := v.Get("f2").Float()
+		rawF3 := v.Get("f3").Float()
+		// 东方财富指数接口 f3 多为百分比×100（-0.25% 返回 -25），绝对值>20 时按需除以 100
+		changePct := rawF3
+		if rawF3 > 20 || rawF3 < -20 {
+			changePct = rawF3 / indexChangePctDivisor
+		}
+		out = append(out, model.IndexQuote{
+			Code:      code,
+			Name:      name,
+			Price:     price,
+			ChangePct: changePct,
+		})
+	}
+	return out, nil
 }
 
 // FormatCode 转为东方财富 secid：上海 0.600519，深圳 1.000001
