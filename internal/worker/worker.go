@@ -10,20 +10,36 @@ import (
 	"stockMaxWin/internal/trace"
 )
 
+// 并发与 K 线数量
 const (
 	defaultConcurrency    = 10
 	minKlinesForMA20      = 20
-	klineCountForStrategy = 80 // 一次请求 80 天，同一 slice 滑动算 MA20/MA60/MACD，不重复请求
+	klineCountForStrategy = 80
 	ma60TrendLookback     = 5
-	macdFast              = 12
-	macdSlow              = 26
-	macdSignal            = 9
 )
 
-func MA5(klines []model.KLine) float64  { return maN(klines, 5) }
-func MA10(klines []model.KLine) float64 { return maN(klines, 10) }
-func MA20(klines []model.KLine) float64 { return maN(klines, 20) }
-func MA60(klines []model.KLine) float64 { return maN(klines, 60) }
+// 均线周期（日）
+const (
+	maPeriod5  = 5
+	maPeriod10 = 10
+	maPeriod20 = 20
+	maPeriod60 = 60
+)
+
+// MACD 参数（12, 26, 9）
+const (
+	macdFast   = 12
+	macdSlow   = 26
+	macdSignal = 9
+)
+
+// MACD 红柱倍数（柱 = 2*(DIF-DEA)）
+const macdHistogramMultiplier = 2
+
+func MA5(klines []model.KLine) float64  { return maN(klines, maPeriod5) }
+func MA10(klines []model.KLine) float64 { return maN(klines, maPeriod10) }
+func MA20(klines []model.KLine) float64 { return maN(klines, maPeriod20) }
+func MA60(klines []model.KLine) float64 { return maN(klines, maPeriod60) }
 
 func maN(klines []model.KLine, n int) float64 {
 	if len(klines) < n {
@@ -94,7 +110,7 @@ func computeMACD(klines []model.KLine) macdResult {
 	histogram := make([]float64, n)
 	for i := macdSlow - 1 + macdSignal - 1; i < n; i++ {
 		j := i - (macdSlow - 1)
-		histogram[i] = 2 * (dif[i] - dea[j])
+		histogram[i] = float64(macdHistogramMultiplier) * (dif[i] - dea[j])
 	}
 	last := n - 1
 	prev := n - 2

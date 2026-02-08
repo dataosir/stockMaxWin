@@ -12,7 +12,11 @@ import (
 
 type ctxKey int
 
-const traceIDKey ctxKey = 0
+const (
+	traceIDKey     ctxKey = 0
+	traceIDFallback       = "0"
+	traceIDBytes          = 4
+)
 
 func WithTraceID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, traceIDKey, id)
@@ -26,20 +30,22 @@ func TraceID(ctx context.Context) string {
 }
 
 func NewTraceID() string {
-	b := make([]byte, 4)
+	b := make([]byte, traceIDBytes)
 	if _, err := rand.Read(b); err != nil {
-		return "0"
+		return traceIDFallback
 	}
 	return hex.EncodeToString(b)
 }
 
 var logMu sync.Mutex
 
+const traceIDEmpty = "-"
+
 // Log 打日志，每行开头固定为 TRACE=id，便于一眼看到 trace 并 grep
 func Log(ctx context.Context, format string, args ...interface{}) {
 	id := TraceID(ctx)
 	if id == "" {
-		id = "-"
+		id = traceIDEmpty
 	}
 	logMu.Lock()
 	msg := fmt.Sprintf(format, args...)

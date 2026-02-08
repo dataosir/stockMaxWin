@@ -20,22 +20,48 @@ import (
 	"stockMaxWin/internal/trace"
 )
 
+// 环境变量名（API 节流与并发，可选覆盖）
+const (
+	envAPIDelayMS       = "STOCKMAXWIN_API_DELAY_MS"
+	envAPIJitterMS      = "STOCKMAXWIN_API_JITTER_MS"
+	envAPIMaxConcurrent = "STOCKMAXWIN_API_MAX_CONCURRENT"
+)
+
+// 东方财富接口地址
 const (
 	EastMoneyListURL  = "https://82.push2.eastmoney.com/api/qt/clist/get"
 	EastMoneyKLineURL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+)
 
+// 列表接口请求字段：f2 现价 f3 涨跌幅 f6 成交量 f8 换手 f10 量比 f12 代码 f14 名称 f23 成交额 f20 总市值 f9 市盈率
+const listFieldsMainBoard = "f2,f3,f6,f8,f10,f12,f14,f23,f20,f9"
+
+// 全市场列表字段：f12 代码 f14 名称
+const listFieldsBrief = "f12,f14"
+
+// 分页
+const listPageSize = 500
+
+// 请求超时与重试
+const (
 	defaultHTTPTimeout = 5 * time.Second
-	maxRetries        = 3
-	retryDelay        = 500 * time.Millisecond
-	retryDelay429     = 5 * time.Second
-	httpStatusTooMany = 429
+	maxRetries         = 3
+	retryDelay         = 500 * time.Millisecond
+	retryDelay429      = 5 * time.Second
+	httpStatusTooMany  = 429
+)
 
+// 防封：请求间隔、抖动、并发上限
+const (
 	maxRespLogLen        = 1200
 	defaultRequestGap    = 200 * time.Millisecond
 	defaultRequestJitter = 150
 	defaultMaxConcurrent = 4
 	maxConcurrentCap     = 20
+)
 
+// 请求头（模拟浏览器）
+const (
 	userAgent      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 	referer        = "https://quote.eastmoney.com/"
 	acceptLanguage = "zh-CN,zh;q=0.9,en;q=0.8"
@@ -52,18 +78,18 @@ var (
 )
 
 func init() {
-	if s := os.Getenv("STOCKMAXWIN_API_DELAY_MS"); s != "" {
+	if s := os.Getenv(envAPIDelayMS); s != "" {
 		if ms, err := strconv.Atoi(s); err == nil && ms > 0 {
 			requestGap = time.Duration(ms) * time.Millisecond
 		}
 	}
-	if s := os.Getenv("STOCKMAXWIN_API_JITTER_MS"); s != "" {
+	if s := os.Getenv(envAPIJitterMS); s != "" {
 		if ms, err := strconv.Atoi(s); err == nil && ms >= 0 {
 			requestJitter = ms
 		}
 	}
 	n := defaultMaxConcurrent
-	if s := os.Getenv("STOCKMAXWIN_API_MAX_CONCURRENT"); s != "" {
+	if s := os.Getenv(envAPIMaxConcurrent); s != "" {
 		if v, err := strconv.Atoi(s); err == nil && v > 0 {
 			n = v
 			if n > maxConcurrentCap {
@@ -207,11 +233,10 @@ func truncateForLog(b []byte) string {
 
 func (c *Client) GetAllStocks(ctx context.Context) ([]model.StockBrief, error) {
 	var all []model.StockBrief
-	pageSize := 500
 	page := 1
 	for {
-		url := fmt.Sprintf("%s?pn=%d&pz=%d&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14",
-			EastMoneyListURL, page, pageSize)
+		url := fmt.Sprintf("%s?pn=%d&pz=%d&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=%s",
+			EastMoneyListURL, page, listPageSize, listFieldsBrief)
 		resp, err := c.doWithRetry(ctx, http.MethodGet, url)
 		if err != nil {
 			return nil, err
@@ -224,7 +249,7 @@ func (c *Client) GetAllStocks(ctx context.Context) ([]model.StockBrief, error) {
 		if count == 0 {
 			break
 		}
-		if total <= len(all) || count < pageSize {
+		if total <= len(all) || count < listPageSize {
 			break
 		}
 		page++
@@ -234,13 +259,11 @@ func (c *Client) GetAllStocks(ctx context.Context) ([]model.StockBrief, error) {
 
 func (c *Client) GetMainBoardQuotes(ctx context.Context) ([]model.StockQuote, error) {
 	var list []model.StockQuote
-	pageSize := 500
 	page := 1
-	fields := "f2,f3,f6,f8,f10,f12,f14,f23,f20,f9"
 	trace.Log(ctx, "api: GetMainBoardQuotes start")
 	for {
 		url := fmt.Sprintf("%s?pn=%d&pz=%d&fs=m:1+t:2,m:0+t:2&fields=%s",
-			EastMoneyListURL, page, pageSize, fields)
+			EastMoneyListURL, page, listPageSize, listFieldsMainBoard)
 		if page == 1 {
 			trace.Log(ctx, "api: GetMainBoardQuotes url=%s", url)
 		}
@@ -256,7 +279,7 @@ func (c *Client) GetMainBoardQuotes(ctx context.Context) ([]model.StockQuote, er
 		if count == 0 {
 			break
 		}
-		if total <= len(list) || count < pageSize {
+		if total <= len(list) || count < listPageSize {
 			break
 		}
 		page++

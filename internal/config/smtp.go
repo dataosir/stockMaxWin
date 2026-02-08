@@ -8,7 +8,18 @@ import (
 	"strings"
 )
 
-const defaultConfigPath = "config.json"
+// 配置路径与 SMTP 环境变量名
+const (
+	defaultConfigPath = "config.json"
+	envConfigPath    = "CONFIG_PATH"
+	envSMTPServer    = "SMTP_SERVER"
+	envSMTPPort      = "SMTP_PORT"
+	envSMTPUser      = "SMTP_USER"
+	envSMTPPassword  = "SMTP_PASSWORD"
+	envSMTPAuthCode  = "SMTP_AUTH_CODE"
+	envSMTPFrom      = "SMTP_FROM"
+	envSMTPTo        = "SMTP_TO"
+)
 
 type SMTP struct {
 	Server   string `json:"smtp_server"`
@@ -19,37 +30,37 @@ type SMTP struct {
 	To       string `json:"smtp_to"`
 }
 
-// LoadSMTP 先读 CONFIG_PATH 指定文件（默认 config.json），再被环境变量覆盖。
+// LoadSMTP 先读 envConfigPath 指定文件（默认 config.json），再被环境变量覆盖。
 func LoadSMTP() *SMTP {
 	cfg := &SMTP{}
-	configPath := os.Getenv("CONFIG_PATH")
+	configPath := os.Getenv(envConfigPath)
 	if configPath == "" {
 		configPath = defaultConfigPath
 	}
 	if b, err := os.ReadFile(configPath); err == nil {
 		_ = json.Unmarshal(b, cfg)
 	}
-	if v := os.Getenv("SMTP_SERVER"); v != "" {
+	if v := os.Getenv(envSMTPServer); v != "" {
 		cfg.Server = v
 	}
-	if v := os.Getenv("SMTP_PORT"); v != "" {
+	if v := os.Getenv(envSMTPPort); v != "" {
 		if p, err := strconv.Atoi(v); err == nil {
 			cfg.Port = p
 		}
 	}
-	if v := os.Getenv("SMTP_USER"); v != "" {
+	if v := os.Getenv(envSMTPUser); v != "" {
 		cfg.User = v
 	}
-	if v := os.Getenv("SMTP_PASSWORD"); v != "" {
+	if v := os.Getenv(envSMTPPassword); v != "" {
 		cfg.Password = v
 	}
-	if v := os.Getenv("SMTP_AUTH_CODE"); v != "" {
+	if v := os.Getenv(envSMTPAuthCode); v != "" {
 		cfg.Password = v
 	}
-	if v := os.Getenv("SMTP_FROM"); v != "" {
+	if v := os.Getenv(envSMTPFrom); v != "" {
 		cfg.From = v
 	}
-	if v := os.Getenv("SMTP_TO"); v != "" {
+	if v := os.Getenv(envSMTPTo); v != "" {
 		cfg.To = v
 	}
 

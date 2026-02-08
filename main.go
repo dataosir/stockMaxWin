@@ -20,18 +20,43 @@ import (
 	"stockMaxWin/internal/worker"
 )
 
+// 环境变量名（便于维护与文档）
 const (
-	defaultConcurrency   = 10
-	envConcurrency       = "STOCKMAXWIN_CONCURRENCY"
-	envSchedule          = "STOCKMAXWIN_SCHEDULE"
-	runTimeout           = 10 * time.Minute
-	jobChannelBuffer     = 50
-	topNByChangePct      = 10
+	envConcurrency = "STOCKMAXWIN_CONCURRENCY"
+	envSchedule    = "STOCKMAXWIN_SCHEDULE"
+)
+
+// 运行与超时
+const (
+	runTimeout       = 10 * time.Minute
+	getKLinesTimeout = 15 * time.Second
+)
+
+// 并发与通道
+const (
+	defaultConcurrency = 10
+	jobChannelBuffer  = 50
+)
+
+// 选股结果与提醒
+const (
+ 	topNByChangePct         = 10
+	emptyRunsBeforeReminder = 3
+)
+
+// 调度时间（本地时区，周一至周五）
+const (
 	scheduleMarketOpen   = 9
 	scheduleMarketClose  = 15
 	scheduleFirstMinute  = 15
 	scheduleSlotInterval = 30
 )
+
+// 日志时间格式
+const timeFormatNextRun = "2006-01-02 15:04"
+
+// 初选预分配容量系数（candidates 约 len(quotes)/candidateCapDiv）
+const candidateCapDiv = 4
 
 func concurrency() int {
 	if s := os.Getenv(envConcurrency); s != "" {
@@ -57,26 +82,43 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
-	runOnce(ctx)
+	_ = runOnce(ctx)
 }
 
 // runScheduler 常驻进程：每半小时 9:15~15:00（周一至周五）执行一次，保证按指定时间周期一直执行。
+// 连续 emptyRunsBeforeReminder 次无入选时发送提醒邮件（请好好工作 + 随机炒股格言）。
 func runScheduler() {
 	traceID := trace.NewTraceID()
 	ctx := trace.WithTraceID(context.Background(), traceID)
 	trace.Log(ctx, "main: 调度模式启动，每半小时 9:15~15:00 周一至周五")
+	var emptyRunCount int
 	for {
 		next := nextRunTime()
 		now := time.Now()
 		if next.After(now) {
 			d := next.Sub(now)
-			trace.Log(ctx, "main: 下次执行 %s (约 %s 后)", next.Format("2006-01-02 15:04"), d.Round(time.Second))
+			trace.Log(ctx, "main: 下次执行 %s (约 %s 后)", next.Format(timeFormatNextRun), d.Round(time.Second))
 			time.Sleep(d)
 		}
 		runCtx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		runCtx = trace.WithTraceID(runCtx, trace.NewTraceID())
-		runOnce(runCtx)
+		selected := runOnce(runCtx)
 		cancel()
+		if len(selected) == 0 {
+			emptyRunCount++
+			if emptyRunCount >= emptyRunsBeforeReminder {
+				trace.Log(ctx, "main: 连续 %d 次无入选，发送提醒邮件", emptyRunCount)
+				mailCfg := buildMailConfig(config.LoadSMTP())
+				if err := mail.SendNoSelectionReminder(context.Background(), mailCfg); err != nil {
+					trace.Log(ctx, "main: 发送提醒邮件失败 err=%v", err)
+				} else {
+					trace.Log(ctx, "main: 已发提醒邮件，请好好工作")
+				}
+				emptyRunCount = 0
+			}
+		} else {
+			emptyRunCount = 0
+		}
 	}
 }
 
@@ -119,19 +161,19 @@ func nextWeekdayAt(from time.Time, loc *time.Location, hour, min int) time.Time 
 	return time.Date(next.Year(), next.Month(), next.Day(), hour, min, 0, 0, loc)
 }
 
-func runOnce(ctx context.Context) {
+func runOnce(ctx context.Context) []*model.Stock {
 	ctx = trace.WithTraceID(ctx, trace.NewTraceID())
 	trace.Log(ctx, "main: start")
 	quotes, err := apiClient.GetMainBoardQuotes(ctx)
 	if err != nil {
 		trace.Log(ctx, "main: GetMainBoardQuotes err=%v", err)
 		log.Printf("GetMainBoardQuotes: %v", err)
-		return
+		return nil
 	}
 	if quotes == nil {
 		quotes = []model.StockQuote{}
 	}
-	candidates := make([]model.StockQuote, 0, len(quotes)/4)
+	candidates := make([]model.StockQuote, 0, len(quotes)/candidateCapDiv)
 	for i := range quotes {
 		if filter.QuotePreFilter(&quotes[i]) {
 			candidates = append(candidates, quotes[i])
@@ -185,6 +227,7 @@ done:
 	mailCfg := buildMailConfig(config.LoadSMTP())
 	mail.MustSendReport(ctx, mailCfg, selected)
 	trace.Log(ctx, "main: end, 共 %d 只", len(selected))
+	return selected
 }
 
 func buildMailConfig(smtpCfg *config.SMTP) *mail.SMTPConfig {
@@ -206,7 +249,7 @@ func GetAllStocks(ctx context.Context) ([]model.StockBrief, error) {
 }
 
 func GetKLines(code string) ([]model.KLine, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), getKLinesTimeout)
 	defer cancel()
 	return apiClient.GetKLines(ctx, code)
 }

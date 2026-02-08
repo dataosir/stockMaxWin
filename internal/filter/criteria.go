@@ -1,10 +1,24 @@
-// Package filter 定义选股条件（Criterion）与组合方式（And/Or），DefaultStrategy 为当前策略。
+// Package filter 定义选股条件（Criterion）与组合方式（And/Or），DefaultStrategy / TrendMomentumStrategy 为策略入口。
 package filter
 
 import (
 	"strings"
 
 	"stockMaxWin/internal/model"
+)
+
+// 名称关键词（剔除用）
+const (
+	nameKeywordST   = "ST"
+	nameKeywordDelist = "退"
+)
+
+// 证券代码前缀：上海主板 6/5、深圳主板 00
+const (
+	codePrefixShanghai = '6'
+	codePrefixShanghaiB = '5'
+	codePrefixShenzhen = '0'
+	codeSecondShenzhenMain = '0'
 )
 
 // Criterion 单条条件：入参为合并后的 Stock，返回是否通过。
@@ -44,27 +58,28 @@ func Or(cs ...Criterion) Criterion {
 	}
 }
 
-// 策略阈值（可调）
+// 默认策略阈值（成交额/量比/换手/涨幅/资金）
 const (
-	amountMin10Yi     = 1e9
-	volumeRatioMin    = 1.5
-	turnoverRateMin   = 3
-	turnoverRateMax   = 12
-	changePctMin      = 3.5
-	changePctMax      = 7
-	netInflowMin1Yi   = 1e8
+	amountMin10Yi   = 1e9
+	volumeRatioMin  = 1.5
+	turnoverRateMin = 3
+	turnoverRateMax = 12
+	changePctMin    = 3.5
+	changePctMax    = 7
+	netInflowMin1Yi = 1e8
 )
 
+// MainBoard 仅主板：上海 6/5 开头，深圳 00 开头。
 func MainBoard(s *model.Stock) bool {
 	code := strings.TrimSpace(s.Code)
 	if len(code) < 2 {
 		return false
 	}
 	switch code[0] {
-	case '6', '5':
+	case codePrefixShanghai, codePrefixShanghaiB:
 		return true
-	case '0':
-		return len(code) >= 2 && code[1] == '0'
+	case codePrefixShenzhen:
+		return len(code) >= 2 && code[1] == codeSecondShenzhenMain
 	default:
 		return false
 	}
@@ -91,7 +106,7 @@ func MA5AboveMA10(s *model.Stock) bool    { return s.MA5 > s.MA10 }
 func PriceAboveMA20(s *model.Stock) bool  { return s.Price > s.MA20 }
 
 func ExcludeST(s *model.Stock) bool {
-	return !strings.Contains(strings.ToUpper(s.Name), "ST")
+	return !strings.Contains(strings.ToUpper(s.Name), nameKeywordST)
 }
 
 func NetInflowMin(min float64) Criterion {
@@ -110,15 +125,14 @@ func MainForceInflowAboveOutflow(s *model.Stock) bool {
 	return s.MainForceInflow > s.MainForceOutflow
 }
 
-// --- 复合策略（趋势+动能+成交量）用到的条件 ---
-
+// 趋势动能策略阈值：市值/PE/换手/量比
 const (
-	marketCapMin50Yi   = 50 * 1e8
-	peMin              = 0
-	peMax              = 60
-	turnoverRateMin3_10 = 3
-	turnoverRateMax3_10 = 10
-	volumeRatioMin1_2  = 1.2
+	marketCapMin50Yi    = 50 * 1e8
+	peMin               = 0
+	peMax               = 60
+	turnoverRateMin3_10  = 3
+	turnoverRateMax3_10  = 10
+	volumeRatioMin1_2   = 1.2
 )
 
 // QuotePreFilter 仅用列表接口数据做初选：剔除 ST/退市、市值>50亿、PE 0-60、换手 3%-10%、量比>1.2。
@@ -127,10 +141,10 @@ func QuotePreFilter(q *model.StockQuote) bool {
 	if q == nil {
 		return false
 	}
-	if strings.Contains(strings.ToUpper(q.Name), "ST") {
+	if strings.Contains(strings.ToUpper(q.Name), nameKeywordST) {
 		return false
 	}
-	if strings.Contains(q.Name, "退") {
+	if strings.Contains(q.Name, nameKeywordDelist) {
 		return false
 	}
 	if q.MarketCap < marketCapMin50Yi {
@@ -149,7 +163,7 @@ func QuotePreFilter(q *model.StockQuote) bool {
 }
 
 func ExcludeDelisted(s *model.Stock) bool {
-	return !strings.Contains(s.Name, "退")
+	return !strings.Contains(s.Name, nameKeywordDelist)
 }
 
 func MarketCapMin(min float64) Criterion {
